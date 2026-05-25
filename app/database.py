@@ -1,48 +1,29 @@
 import os
-from psycopg2 import pool
-from psycopg2.extras import RealDictCursor
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 
 DB_URL = (
-    f"host={os.getenv('DB_HOST', 'localhost')} "
-    f"dbname={os.getenv('DB_NAME', 'fastapi')} "
-    f"user={os.getenv('DB_USER', 'postgres')} "
-    f"password={os.getenv('DB_PASSWORD', 'password')}"
+    f"postgresql://{os.getenv('DB_USER', 'postgres')}:"
+    f"{os.getenv('DB_PASSWORD', 'password')}@"
+    f"{os.getenv('DB_HOST', 'localhost')}/"
+    f"{os.getenv('DB_NAME', 'fastapi')}"
 )
 
-# Created once at startup — like Prisma's PrismaClient()
-# minconn=2: keeps 2 connections always open
-# maxconn=10: never opens more than 10 at once
-connection_pool: pool.ThreadedConnectionPool = None
+engine = create_engine(DB_URL)
 
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def init_pool():
-    global connection_pool
-    connection_pool = pool.ThreadedConnectionPool(minconn=2, maxconn=10, dsn=DB_URL, cursor_factory=RealDictCursor)
+Base = declarative_base()
 
 
 def init_db():
-    conn = connection_pool.getconn()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS posts (
-                id SERIAL PRIMARY KEY,
-                title VARCHAR(255) NOT NULL,
-                description TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-            """
-        )
-        conn.commit()
-        cur.close()
-    finally:
-        connection_pool.putconn(conn)
+    Base.metadata.create_all(bind=engine)
 
 
 def get_db():
-    conn = connection_pool.getconn()
+    db = SessionLocal()
     try:
-        yield conn
+        yield db
     finally:
-        connection_pool.putconn(conn)
+        db.close()
